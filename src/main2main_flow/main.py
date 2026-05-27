@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
 from crewai.flow import Flow, listen, start, router, or_
 
 from main2main_flow.crews.content_crew.content_crew import ContentCrew
-
+from main2main_flow.utils import UpgradeCompleted, StepCompleted, UpgradeFailed, StepRetryNeeded
 
 class ContentState(BaseModel):
     topic: str = ""
@@ -19,46 +20,55 @@ class ContentFlow(Flow[ContentState]):
 
     @start()
     def initialize(self):
-        # 定义各种state、中间info信息，用于不同step之间的通信
-        self.end_to_adapt = False
         self.max_step = 0
-        self.step=0
+        self.current_step=0
+        self.retry_count=0
 
     @listen(initialize)
     def analyze_commit_and_plan_step(self):
+        # 笑爽
         print("analyze_commit_and_plan_step")
         self.max_step = 10
         return "Analysize"
 
-    @router(or_(analyze_commit_and_plan_step, "NEXT_STEP"))
-    def commit_adapt(self):
-        if self.end_to_adapt:
-            return "END"
-        else:
-            # Call Agent
-            print("commit_adapt")
-            return "ADAPT_OK"
+    @listen(or_(analyze_commit_and_plan_step, StepCompleted, StepRetryNeeded))
+    def ai_analysis(self):
+        # 逢春
+        # Call Agent
+        print("commit_adapt")
+        return "ADAPT_OK"
 
-    @router("ADAPT_OK")
-    def run_e2e_test(self):
-        # run e2e test
+    @router(ai_analysis)
+    def run_e2e_test(self) -> Literal["StepCompleted", "UpgradeCompleted", "UpgradeFailed", "StepRetryNeeded"]:
+        # run e2e test 卫军
         print("run_e2e_test")
-        res = True
-        if res:
-            self.step+=1
-            return "PASS"
+        test_reslut = True
+        if test_reslut:
+            self.current_step+=1
+            if self.current_step>=self.max_step:
+                return UpgradeCompleted
+            else:
+                return StepCompleted
         else:
-            return "PASS_FAIL"
+            self.retry_count+=1
+            if self.retry_count>=3:
+                self.retry_count=0
+                return UpgradeFailed
+            else:
+                return StepRetryNeeded
 
-    @router("PASS")
-    def pass_step(self):
-        self.end_to_adapt = True
-        return "NEXT_STEP"
+    @listen(or_(UpgradeCompleted, UpgradeFailed))
+    def generate_final_post(self):
+        # 佳伟
+        # create final post from draft
+        return "FinalPost"
 
-    @listen("END")
-    def push(self):
-        return "NEXT_STEP"
-
+    @listen(generate_final_post)
+    def push_to_github(self):
+        # 佳伟
+        #if xxx:
+        # push final post to github
+        return "PushToGithub"
 
 def kickoff():
     content_flow = ContentFlow()
